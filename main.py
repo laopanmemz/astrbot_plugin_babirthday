@@ -13,7 +13,7 @@ from astrbot.api import AstrBotConfig
 class DataDownloadError(Exception): # 自定义数据下载异常类
     pass
 
-@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件", "1.0.0")
+@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件。", "1.0.0")
 class MyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
