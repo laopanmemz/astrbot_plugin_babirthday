@@ -1,0 +1,20 @@
+{
+  "proxy": {
+    "description": "Github 加速地址",
+    "type": "list",
+    "hint": "在此填入 Github 加速地址。支持按照 AstrBot 官方文档自建的加速地址，此处默认添加了几个大概能用的链接，如果用不了建议按照 AstrBot 官方文档自建一个自己的加速地址试试。",
+    "default": ["https://github.moeyy.xyz","https://gh.llkk.cc","https://gitproxy.click","https://gh.b52m.cn","https://github.tbedu.top","https://gh-proxy.net"]
+  },
+  "isphoto": {
+    "description": "是否带学生图片",
+    "type": "bool",
+    "hint": "不开启则仅发送纯文本生日提醒。",
+    "default": true
+  },
+  "time": {
+    "description": "每日提醒时间",
+    "type": "string",
+    "hint": "24小时制，格式为 HH:MM ，例如：8:00，13:00等，冒号要用英文的！",
+    "default": "00:00"
+  }
+}
