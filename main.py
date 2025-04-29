@@ -25,7 +25,11 @@ class MyPlugin(Star):
         self.scheduler = AsyncIOScheduler(timezone="Asia/Shanghai") # 新建调度器
         self.isphoto = self.config.get("isphoto", True)
 
-    async def today_birthdays(self, event: AstrMessageEvent): # 发送生日提醒
+
+    async def today_birthdays(self, event: AstrMessageEvent, group_id): # 发送生日提醒
+        from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
+        assert isinstance(event, AiocqhttpMessageEvent)
+        client = event.bot  # 得到 client
         with open(os.path.join("data", "plugin", "astrbot_plugin_babirthday", "SchaleDB", self.stu_json), "r", encoding="utf-8") as f:
             data = json.load(f) # 读取json文件
         datetime_today = datetime.date.today() # 获取当前日期
@@ -36,13 +40,36 @@ class MyPlugin(Star):
                 Name = i.get("Name")
                 # 构建富文本消息
                 if self.isphoto:
-                    chain = [
-                        Comp.Plain(f"🎉今天是 {Name} 的生日！"),
-                        Comp.Image.fromFileSystem(os.path.join("data", "plugin", "astrbot_plugin_babirthday", "SchaleDB", self.stu_icon, f"{Id}.webp"))
-                    ]
-                    yield event.chain_result(chain)
+                    payload = {
+                        "group_id": group_id,
+                        "message": [
+                            {
+                                "type": "text",
+                                "data": {
+                                    "text": f"🎉今天是 {Name} 的生日！"
+                                },
+                            },
+                            {
+                                "type": "image",
+                                "data": {
+                                    "file": os.path.join("data", "plugin", "astrbot_plugin_babirthday", "SchaleDB", self.stu_icon, f"{Id}.webp")
+                                }
+                            }
+                        ]
+                    }
                 else:
-                    yield event.plain_result(f"🎉今天是 {Name} 的生日！")
+                    payload = {
+                        "group_id": group_id,
+                        "message": [
+                            {
+                                "type": "text",
+                                "data": {
+                                    "text": f"🎉今天是 {Name} 的生日！"
+                                },
+                            }
+                        ]
+                    }
+                await client.api.call_action("send_group_msg", **payload)
                 event.stop_event()
                 return
             else:
@@ -53,19 +80,20 @@ class MyPlugin(Star):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
         if not os.path.exists(os.path.join("data", "plugin", "astrbot_plugin_babirthday", "SchaleDB", self.stu_json)): # 判断是否存在students.json，如无则调用更新函数拉取
             try:
-                yield self.update_students(event)
+                yield self.update_students()
             except DataDownloadError:
                 logger.error(f"从 SchaleDB 仓库拉取数据失败！所有加速链接均无法访问，请检查配置以及网络环境。")
         try:
             execute_time = self.config.get("time", "0:0")
             hour, minute = map(int, execute_time.split(":"))
-            self.scheduler.add_job(self.today_birthdays,CronTrigger(hour=hour,minute=minute),args=[event])
+            for i in self.config.get("group_id", []):
+                self.scheduler.add_job(self.today_birthdays,CronTrigger(hour=hour,minute=minute),args=[event, i])
             self.scheduler.start()
             logger.info(f"已启用定时任务：每天 {execute_time} 点更新ba生日提醒！")
         except (Exception, ValueError, KeyError) as e:
             logger.error(f"定时任务启动失败：{e}")
 
-    async def update_students(self, event: AstrMessageEvent):
+    async def update_students(self):
         proxies = self.config.get("proxy") # 获取配置文件中的加速链接列表
         for proxy_url in proxies:
             proxy_url = proxy_url.rstrip('/') + '/'  # 统一处理结尾斜杠
@@ -134,7 +162,7 @@ class MyPlugin(Star):
     async def update_students_command(self, event: AstrMessageEvent):
         """手动对学生数据进行更新"""
         try:
-            yield self.update_students(event)
+            yield self.update_students()
         except DataDownloadError:
             yield event.plain_result(f"从 SchaleDB 仓库拉取数据失败！所有加速链接均无法访问，请检查配置以及网络环境。")
 
@@ -142,7 +170,8 @@ class MyPlugin(Star):
     async def get_birthday(self, event: AstrMessageEvent):
         """手动拉取学员生日"""
         try:
-            yield self.today_birthdays(event)
+            group_id = event.get_group_id()
+            yield self.today_birthdays(event, group_id=group_id)
         except Exception as e:
             yield event.plain_result(str(e))
 

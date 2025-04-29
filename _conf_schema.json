@@ -1,4 +1,10 @@
 {
+  "list": {
+    "description": "开启提醒群",
+    "type": "list",
+    "hint": "在此填入需要提醒的群聊",
+    "default": []
+  },
   "proxy": {
     "description": "Github 加速地址",
     "type": "list",
