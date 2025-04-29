@@ -113,6 +113,7 @@ class MyPlugin(Star):
                     # 不是 Git 仓库，提示用户清理目录
                     logger.error(f"目录 SchaleDB 已存在且不是 Git 仓库，请删除目录后重试")
                     return
+
             else:
                 # 目录不存在，初始化新仓库并使用加速链接克隆
                 try:
@@ -130,6 +131,32 @@ class MyPlugin(Star):
                     logger.warning(f"使用加速链接 {proxy_url} 克隆仓库失败: {e}")
                     continue
         raise DataDownloadError("从 SchaleDB 仓库拉取数据失败！所有加速链接均无法访问，请检查配置以及网络环境。")
+
+
+        # temp_savepath = os.path.join("data", "plugin", "astrbot_plugin_babirthday", "students.json")
+        # for proxy_url in proxies:
+        #     try:
+        #         combined_url = f"{proxy_url}/{self.schaledb_url_cn}"
+        #         req = urllib.request.Request(combined_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36 Edg/134.0.0."})
+        #         with urllib.request.urlopen(req, timeout=60) as response:
+        #             raw_data = response.read()
+        #             students = json.loads(raw_data)
+        #             data_preprocess = []
+        #             for i in students:
+        #                 data_preprocess.append({
+        #                     "Id": i.get("Id"),
+        #                     "Name": i.get("Name"),
+        #                     "Birthday": i.get("Birthday")
+        #                 })
+        #             with open(temp_savepath, "wb") as f:
+        #                 json_str = json.dumps(data_preprocess, ensure_ascii=False, indent=2)
+        #                 f.write(json_str.encode("utf-8"))
+        #             yield event.plain_result("成功从 SchaleDB 仓库更新数据！") # 初始化不需要输出，issue。
+        #             return
+        #     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
+        #         logger.error(f"使用代理 {proxy_url} 下载失败: {str(e)}")
+        #         continue
+        # raise DataDownloadError("从 SchaleDB 仓库拉取数据失败！所有加速链接均无法访问，请检查配置以及网络环境。") # 初始化不需要输出，issue。
 
     @filter.command("ba数据更新")
     async def update_students_command(self, event: AstrMessageEvent):
@@ -194,6 +221,7 @@ class MyPlugin(Star):
         yield event.chain_result(chain)
         event.stop_event()
         return
+
     async def terminate(self):
         """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
         self.scheduler.shutdown()
