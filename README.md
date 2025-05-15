@@ -6,7 +6,9 @@
 
 ---
 
-<u>**安装插件后，进入插件文件夹，将SchaleDB.zip解压，解压后会得到SchaleDB单文件夹**</u>
+
+
+<u>**正常情况下，安装插件后会自动解压SchaleDB.zip，如未正常解压，进入插件文件夹，将SchaleDB.zip解压，解压后会得到SchaleDB单文件夹**</u>
 
 <u>**文件夹内有".git"（隐藏）、"data"、"images"三个文件夹。**</u>
 
