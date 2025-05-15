@@ -58,7 +58,7 @@ class Birthday(Star):
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
         if not os.path.exists(os.path.join(self.path, "SchaleDB")):
-            with zipfile.ZipFile("SchaleDB.zip", "r") as zipf:
+            with zipfile.ZipFile(os.path.join(self.path, "SchaleDB.zip"), "r") as zipf:
                 zipf.extractall(self.path)
         # 配置定时任务
         try:
