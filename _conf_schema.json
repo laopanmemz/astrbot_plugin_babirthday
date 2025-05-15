@@ -1,0 +1,20 @@
+{
+  "list": {
+    "description": "开启提醒群",
+    "type": "list",
+    "hint": "在此填入需要提醒的群聊唯一标识符sid，不是群号！例如：aiocqhttp:GroupMessage:1919810114",
+    "default": []
+  },
+  "isphoto": {
+    "description": "是否带学生图片",
+    "type": "bool",
+    "hint": "不开启则仅发送纯文本生日提醒。",
+    "default": true
+  },
+  "time": {
+    "description": "每日提醒时间",
+    "type": "string",
+    "hint": "24小时制，格式为 HH:MM ，例如：8:00，13:00 等，注意英文冒号！",
+    "default": "00:00"
+  }
+}
