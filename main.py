@@ -1,6 +1,8 @@
 import json
 import os.path
 import datetime
+import zipfile
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import astrbot.api.message_components as Comp
@@ -55,6 +57,9 @@ class Birthday(Star):
 
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
+        if not os.path.exists(os.path.join(self.path, "SchaleDB")):
+            with zipfile.ZipFile("SchaleDB.zip", "r") as zipf:
+                zipf.extractall(self.path)
         # 配置定时任务
         try:
             execute_time = self.config.get("time", "0:0")
