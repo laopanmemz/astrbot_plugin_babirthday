@@ -1,10 +1,8 @@
+import asyncio
 import json
 import os.path
 import datetime
 import zipfile
-
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 import astrbot.api.message_components as Comp
 from git import Repo, Git
 from astrbot.api.event import filter, AstrMessageEvent
@@ -16,7 +14,7 @@ from astrbot.core.message.message_event_result import MessageChain
 class DataDownloadError(Exception): # 自定义数据下载异常类
     pass
 
-@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件。", "1.0.0")
+@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件。", "1.0.1")
 class Birthday(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -25,9 +23,10 @@ class Birthday(Star):
         self.schaledb_repo = "https://github.com/SchaleDB/SchaleDB.git"
         self.stu_icon = os.path.join("images", "student", "icon")
         self.stu_json = os.path.join("data", "cn", "students.json")
-        self.scheduler = AsyncIOScheduler(timezone="Asia/Shanghai") # 新建调度器
         self.isphoto = self.config.get("isphoto", True)
-        self.group_ids = self.config.get("group_id", [])  # 保存群组ID列表
+        self.group_ids = self.config.get("list", [])  # 保存群组ID列表
+        self.execute_time = self.config.get("time", "0:0")
+        asyncio.create_task(self.daily_task())
 
     async def today_birthdays(self): # 发送生日提醒
         """定时发送今日生日提醒"""
@@ -51,27 +50,38 @@ class Birthday(Star):
                 message_chain = MessageChain().message(f"🎉今天是 {student_name} 的生日！")
             for group_id in self.group_ids:
                 try:
+                    logger.info(f"{group_id}：{message_chain}")
                     await self.context.send_message(group_id, message_chain)
+                    logger.debug(f"已发送提醒: {group_id}")
                 except Exception as e:
                     logger.error(f"发送群消息失败: {e}")
+
+    def sleeptime(self):
+        now = datetime.datetime.now()
+        hour, minute = map(int, self.execute_time.split(":"))
+        tomorrow = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if tomorrow <= now:
+            tomorrow += datetime.timedelta(days=1)
+        seconds = (tomorrow - now).total_seconds()
+        return seconds
+
+    async def daily_task(self):
+        while True:
+            try:
+                sleep_time = self.sleeptime()
+                await asyncio.sleep(sleep_time)
+                await self.today_birthdays()
+                await asyncio.sleep(60)
+            except Exception as e:
+                logger.error(f"定时任务执行失败: {e}")
+                await asyncio.sleep(300)
 
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
         if not os.path.exists(os.path.join(self.path, "SchaleDB")):
             with zipfile.ZipFile(os.path.join(self.path, "SchaleDB.zip"), "r") as zipf:
                 zipf.extractall(self.path)
-        # 配置定时任务
-        try:
-            execute_time = self.config.get("time", "0:0")
-            hour, minute = map(int, execute_time.split(":"))
-            self.scheduler.add_job(
-                self.today_birthdays,
-                CronTrigger(hour=hour, minute=minute)
-            )
-            self.scheduler.start()
-            logger.info(f"定时任务已启动: {hour:02}:{minute:02}")
-        except Exception as e:
-            logger.error(f"定时任务配置失败: {e}")
+
 
     async def update_students(self):
         """更新所有学生数据"""
@@ -179,6 +189,3 @@ class Birthday(Star):
 
     async def terminate(self):
         """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
-        if self.scheduler and self.scheduler.running:
-            await self.scheduler.shutdown()
-            logger.info("定时任务已经被优雅的关闭了~")
