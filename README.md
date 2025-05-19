@@ -88,11 +88,11 @@
 
 2. 遇到抛出 `从 SchaleDB 仓库拉取数据失败！请参阅README文档常见问题以解决。` 的错误，大多数是因为网络问题，可通过以下两种方法，自行修改远程仓库链接，加上加速镜像前置地址即可。
 
-   第一种：打开插件文件夹/.git文件夹（文件夹默认为隐藏状态），找到config文件，修改url行的地址即可。
+   第一种：打开插件文件夹/SchaleDB/.git文件夹（文件夹默认为隐藏状态），找到config文件，修改url行的地址即可。
 
    ```
    [remote "origin"]
-   	url = https://github.com/laopanmemz/astrbot_plugin_babirthday.git
+   	url = https://github.com/SchaleDB/SchaleDB.git
    ```
 
    第二种：打开插件文件夹目录，进入Schale文件夹，在此文件夹打开cmd，然后执行
@@ -105,7 +105,7 @@
 
 > 可前往 [加速站状态页](https://status.akams.cn/status/services) 此处，找到 `Github 公益代理`  栏，选一个能用的
 >
-> 加速地址格式：加速链接 + 完整Github 仓库链接，例如：
+> 加速地址拼接格式：加速链接 + 完整Github 仓库链接，例如：
 >
 > **`https://github.moeyy.xyz/https://github.com/SchaleDB/SchaleDB`**
 
