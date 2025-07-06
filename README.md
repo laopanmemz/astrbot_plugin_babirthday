@@ -103,7 +103,7 @@
 
 ---
 
-> 可前往 [加速站状态页](https://status.akams.cn/status/services) 此处，找到 `Github 公益代理`  栏，选一个能用的
+> 可前往 [加速站状态页](https://uptime.akams.cn/status/philanthropy) 此处，找到 `Github`  栏，选一个能用的
 >
 > 加速地址拼接格式：加速链接 + 完整Github 仓库链接，例如：
 >
