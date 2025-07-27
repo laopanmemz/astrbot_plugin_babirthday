@@ -2,187 +2,247 @@ import asyncio
 import json
 import os.path
 import datetime
-import zipfile
+import shutil
+import aiohttp
+import croniter
 import astrbot.api.message_components as Comp
-from git import Repo, Git
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 from astrbot.api import AstrBotConfig
 from astrbot.core.message.message_event_result import MessageChain
 
-class DataDownloadError(Exception): # 自定义数据下载异常类
-    pass
-
-@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件。", "1.0.1")
+@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件。", "1.1.0")
 class Birthday(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
+        self.api = "https://api.kivo.wiki/api/v1/data/students"
         self.config = config
-        self.path = os.path.join("data", "plugins", "astrbot_plugin_babirthday") # 将路径全部写入变量
-        self.schaledb_repo = "https://github.com/SchaleDB/SchaleDB.git"
-        self.stu_icon = os.path.join("images", "student", "icon")
-        self.stu_json = os.path.join("data", "cn", "students.json")
+        self.path = os.path.join("data", "plugins", "astrbot_plugin_babirthday")
+        self.data_path = os.path.join(self.path, "birthday.json")
         self.isphoto = self.config.get("isphoto", True)
-        self.group_ids = self.config.get("list", [])  # 保存群组ID列表
+        self.group_ids = self.config.get("list", [])
         self.execute_time = self.config.get("time", "0:0")
         asyncio.create_task(self.daily_task())
 
-    async def today_birthdays(self): # 发送生日提醒
-        """定时发送今日生日提醒"""
-        data_path = os.path.join(self.path, "SchaleDB", self.stu_json)
-        with open(data_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        today = datetime.date.today()
-        today_str = f"{today.month}月{today.day}日"
-        today_students = []
-        for student in data:
-            if student.get("Birthday") == today_str:
-                today_students.append(student)
-        if today_students:
-            shortest_student = min(today_students, key=lambda x: len(x["Name"]))
-            student_id = shortest_student["Id"]
-            student_name = shortest_student["Name"]
-            image_path = os.path.join(self.path, "SchaleDB", self.stu_icon, f"{student_id}.webp")
-            if self.isphoto and os.path.exists(image_path):
-                message_chain = MessageChain().message(f"🎉今天是 {student_name} 的生日！").file_image(image_path)
-            else:
-                message_chain = MessageChain().message(f"🎉今天是 {student_name} 的生日！")
-            for group_id in self.group_ids:
-                try:
-                    logger.info(f"{group_id}：{message_chain}")
-                    await self.context.send_message(group_id, message_chain)
-                    logger.debug(f"已发送提醒: {group_id}")
-                except Exception as e:
-                    logger.error(f"发送群消息失败: {e}")
+    async def initialize(self):
+        """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
 
-    def sleeptime(self):
-        now = datetime.datetime.now()
-        hour, minute = map(int, self.execute_time.split(":"))
-        tomorrow = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if tomorrow <= now:
-            tomorrow += datetime.timedelta(days=1)
-        seconds = (tomorrow - now).total_seconds()
-        return seconds
+    async def get_weekbirthday(self):
+        """从API中返回本周生日学生（返回为学生ID）"""
+        async with aiohttp.ClientSession() as session:
+            async with session.get(self.api + "/birthday/week", timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                weekbirthday = await resp.json()
+        students = weekbirthday["data"]["students"]
+        return students
 
-    async def daily_task(self):
+    async def get_birthstudata(self):
+        """使用返回到的ID，去请求获得学生详细信息，把本周学生的基本信息存在json内，并拉取学生头像"""
+        data = []
+        students_list = await self.get_weekbirthday()
+        if os.path.exists(os.path.join(self.path, "avatar")):
+            shutil.rmtree(os.path.join(self.path, "avatar")) # 这一步先把原来的旧数据清空
+        if not os.path.exists(os.path.join(self.path, "avatar")):
+            os.mkdir(os.path.join(self.path, "avatar")) # 确认删干净后，再重新建立新目录
+        async with aiohttp.ClientSession() as session:
+            for student in students_list:
+                async with session.get(self.api + "/" + str(student), timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                    req = await resp.json()
+                id = req["data"]["id"]
+                name = req["data"]["given_name"]
+                avatar = None
+                for i in req["data"]["skin_list"]:
+                    if i.get("id") == id:
+                        avatar = i.get("avatar")
+                birthday = req["data"]["birthday"]
+                data.append({"id": id, "avatar": avatar, "name": name, "birthday": birthday})
+                if avatar:
+                    try:
+                        async with session.get(avatar) as response:
+                            if response.status == 200:
+                                avatar_path = os.path.join(self.path, "avatar", f"{id}.png")
+                                with open(avatar_path, 'wb') as f:
+                                    f.write(await response.read())
+                            else:
+                                logger.error(f"下载头像失败，状态码: {response.status}, ID: {id}")
+                    except Exception as e:
+                        logger.error(f"下载头像图片时出错: {e}, ID: {id}")
+        with open(os.path.join(self.path, "birthday.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+
+        logger.info("已拉取最新数据。")
+
+    async def weekly_task(self):
+        """使用cron表达式的每周任务"""
+        # cron表达式: "0 0 * * 1" 表示每周一0点执行
+        cron = croniter.croniter("0 0 * * 1", datetime.datetime.now())
         while True:
             try:
-                sleep_time = self.sleeptime()
-                await asyncio.sleep(sleep_time)
+                # 获取下一次执行时间
+                next_run = cron.get_next(datetime.datetime)
+                now = datetime.datetime.now()
+                sleep_seconds = (next_run - now).total_seconds()
+                logger.info(f"下次执行每周任务时间: {next_run}，等待 {sleep_seconds} 秒")
+                await asyncio.sleep(sleep_seconds)
+
+                # 执行数据拉取
+                await self.get_birthstudata()
+                logger.info("每周数据拉取完成")
+
+                # 等待一小段时间避免重复执行
+                await asyncio.sleep(60)
+            except Exception as e:
+                logger.error(f"每周定时任务执行失败: {e}")
+                await asyncio.sleep(300)
+
+    async def daily_task(self):
+        """使用cron表达式的每日任务"""
+        # 解析配置的时间
+        hour, minute = map(int, self.execute_time.split(":"))
+        # 构造cron表达式: "minute hour * * *"
+        cron_expression = f"{minute} {hour} * * *"
+        # 创建cron迭代器
+        cron = croniter.croniter(cron_expression, datetime.datetime.now())
+        while True:
+            try:
+                # 获取下一次执行时间
+                next_run = cron.get_next(datetime.datetime)
+                now = datetime.datetime.now()
+                sleep_seconds = (next_run - now).total_seconds()
+                logger.info(f"下次执行每日任务时间: {next_run}，等待 {sleep_seconds} 秒")
+                await asyncio.sleep(sleep_seconds)
                 await self.today_birthdays()
                 await asyncio.sleep(60)
             except Exception as e:
                 logger.error(f"定时任务执行失败: {e}")
                 await asyncio.sleep(300)
 
-    async def initialize(self):
-        """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
-        if not os.path.exists(os.path.join(self.path, "SchaleDB")):
-            with zipfile.ZipFile(os.path.join(self.path, "SchaleDB.zip"), "r") as zipf:
-                zipf.extractall(self.path)
-
-
-    async def update_students(self):
-        """更新所有学生数据"""
-        git = Git(os.path.join(self.path, "SchaleDB"))
-        repo = Repo(os.path.join(self.path, "SchaleDB"))
-        git.config("core.sparseCheckout", "true")
-        if not os.path.exists(os.path.join(self.path, "SchaleDB")):
-            raise Exception("唔嘿~仓库貌似不存在哦，请查看README文档克隆仓库。")
-        if not os.path.exists(os.path.join(self.path, "SchaleDB", ".git")):
-            raise Exception("唔嘿~仓库似乎没有初始化，请查看README文档重新克隆仓库哦。")
-        try:
-            repo.git.pull("origin", "main", depth=1, force=True)
-        except Exception as e:
-            raise DataDownloadError(f"从 SchaleDB 仓库拉取数据失败！请参阅README文档常见问题以解决。{str(e)}")
-        return
+    async def today_birthdays(self): # 发送生日提醒
+        """定时发送今日生日提醒"""
+        with open(self.data_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        today = datetime.date.today()
+        today_str = f"{today.month:02d}-{today.day:02d}"
+        for student in data:
+            if student.get("birthday") == today_str:
+                id = student.get("id")
+                name = student.get("name")
+                avatar_path = os.path.join(self.path, "avatar" f"{id}.png")
+                if self.isphoto and os.path.exists(avatar_path):
+                    message_chain = MessageChain().message(f"🎉今天是 {name} 的生日！").file_image(avatar_path)
+                else:
+                    message_chain = MessageChain().message(f"🎉今天是 {name} 的生日！")
+                for group_id in self.group_ids:
+                    try:
+                        await self.context.send_message(group_id, message_chain)
+                        logger.debug(f"已发送提醒: {group_id}：{message_chain}")
+                    except Exception as e:
+                        logger.error(f"发送群消息失败: {e}")
+            else:
+                continue
 
     @filter.command("ba数据更新")
     async def update_students_command(self, event: AstrMessageEvent):
         """手动对学生数据进行更新"""
         try:
-            await self.update_students()
+            await self.get_birthstudata()
             yield event.plain_result("✅学生数据更新成功！")
-        except DataDownloadError as e:
+        except Exception as e:
             yield event.plain_result(str(e))
 
     @filter.command("ba生日")
     async def get_birthday(self, event: AstrMessageEvent):
         """手动拉取学员生日"""
-        data_path = os.path.join(self.path, "SchaleDB", self.stu_json)
-        with open(data_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        today = datetime.date.today()
-        today_str = f"{today.month}月{today.day}日"
         found = False
         chain = []
-        today_students = []
+        with open(self.data_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        today = datetime.date.today()
+        today_str = f"{today.month:02d}-{today.day:02d}"
         for student in data:
-            if student.get("Birthday") == today_str:
-                today_students.append(student)
-        if today_students:
-            shortest_student = min(today_students, key=lambda x: len(x["Name"]))
-            student_id = shortest_student["Id"]
-            student_name = shortest_student["Name"]
-            image_path = os.path.join(self.path, "SchaleDB", self.stu_icon, f"{student_id}.webp")
-            if self.isphoto and os.path.exists(image_path):
-                chain.extend([
-                    Comp.Plain(f"🎉今天是 {student_name} 的生日！"),
-                    Comp.Image.fromFileSystem(image_path)
-                ])
+            if student.get("birthday") == today_str:
+                id = student.get("id")
+                name = student.get("name")
+                avatar_path = os.path.join(self.path, "avatar" f"{id}.png")
+                if self.isphoto and os.path.exists(avatar_path):
+                    chain.extend([
+                        Comp.Plain(f"🎉今天是 {name} 的生日！"),
+                        Comp.Image.fromFileSystem(avatar_path)
+                    ])
+                else:
+                    chain.extend([f"🎉今天是 {name} 的生日！"])
+                yield event.chain_result(chain)
+                found = True
             else:
-                chain.extend([f"🎉今天是 {student_name} 的生日！"])
-            yield event.chain_result(chain)
-            found = True
+                continue
         if not found:
             yield event.plain_result("⏳今天没有学员过生日哦。")
-
 
     @filter.command("ba本周生日")
     async def week_birthdays(self, event: AstrMessageEvent):
         """输出本周剩余天数的学生生日"""
-        with open(os.path.join(self.path, "SchaleDB", self.stu_json), "r", encoding="utf-8") as f:
-            data = json.load(f) # 读取json文件
+        with open(self.data_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
         # 获取当前日期
         today = datetime.date.today()
-        # 计算当前是本周第几天（周一为1，周日为7）
-        current_weekday = today.isoweekday()
-        # 计算到周日还需几天
-        days_until_sunday = 7 - current_weekday
-        # 生成从今天到周日的所有日期
-        dates = [today + datetime.timedelta(days=i) for i in range(days_until_sunday + 1)]
-        # 格式化日期为"X月X日"的字符串列表
-        date_strings = [f"{d.month}月{d.day}日" for d in dates]
-        # 构建生日字典
+        # 计算本周一的日期
+        monday = today - datetime.timedelta(days=today.weekday())
+        # 生成本周所有日期
+        week_dates = [monday + datetime.timedelta(days=i) for i in range(7)]
+        # 格式化日期字符串列表
+        date_strings = [f"{d.month:02d}-{d.day:02d}" for d in week_dates]
+
         birthday_dict = {}
         for student in data:
-            if birthday := student.get("Birthday"):
+            if birthday := student.get("birthday"):
                 birthday_dict.setdefault(birthday, []).append(student)
-        # 生成有序结果
+        # 生成本周生日学生列表
         ordered_results = []
         for date_str in date_strings:
             if students := birthday_dict.get(date_str):
-                ordered_results.append((date_str, students))
+                # 判断日期是否过了
+                is_past = week_dates[date_strings.index(date_str)] < today
+                is_today = week_dates[date_strings.index(date_str)] == today
+                for student in students:
+                    ordered_results.append((date_str, student, is_past, is_today))
+
+        total_count = len(ordered_results)
+
         # 构建消息链
         chain = []
-        if not ordered_results:
-            chain.append(Comp.Plain("本周已经没有学员过生日了哦～🎉"))
+        if total_count == 0:
+            chain.append(Comp.Plain("⏳本周没有学员过生日哦~"))
         else:
-            chain.append(Comp.Plain("🎂本周生日学员列表：\n\n"))
-            for date_str, students in ordered_results:
-                # 添加日期标题
-                chain.append(Comp.Plain(f"\n\n📅{date_str}："))
-                # 遍历当日学员
-                for idx, student in enumerate(students, 1):
-                    # 添加学生信息
-                    if self.isphoto:
+            # 计算已过和未过生日的学生数量
+            past_count = sum(1 for _, _, is_past, is_today in ordered_results if is_past)
+            future_count = sum(1 for _, _, is_past, is_today in ordered_results if not is_past and not is_today)
+
+            chain.append(Comp.Plain(f"🎂本周生日学员列表：\n"))
+            chain.append(Comp.Plain(
+                f"本周共有{total_count}个学生过生日\n已过{past_count}位，未过{future_count}位\n\n"))
+
+            # 按日期顺序显示学生信息
+            for date_str, student, is_past, is_today in ordered_results:
+                status = ""
+                if is_today:
+                    status = "（🎉就在今天！）"
+                if is_past:
+                    status = "（已过）"
+                else:
+                    status = "（未过）"
+
+                if self.isphoto:
+                    avatar_path = os.path.join(self.path, "avatar", f"{student['id']}.png")
+                    if os.path.exists(avatar_path):
                         chain.extend([
-                            Comp.Plain(f"\n{idx}. {student['Name']}"),
-                            Comp.Image.fromFileSystem(os.path.join(self.path, "SchaleDB", self.stu_icon, f"{student['Id']}.webp"))
+                            Comp.Plain(f"- {student['name']} ({date_str}) {status}\n"),
+                            Comp.Image.fromFileSystem(avatar_path)
                         ])
                     else:
-                        chain.extend([Comp.Plain(f"\n{idx}. {student['Name']}")])
+                        chain.append(Comp.Plain(f"- {student['name']} ({date_str}) {status}\n"))
+                else:
+                    chain.append(Comp.Plain(f"- {student['name']} ({date_str}) {status}\n"))
+
         yield event.chain_result(chain)
         event.stop_event()
         return

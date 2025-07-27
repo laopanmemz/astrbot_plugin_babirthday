@@ -1,3 +1,3 @@
-gitpython
-zipfile
+croniter
+aiohttp
 asyncio
