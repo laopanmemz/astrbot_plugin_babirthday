@@ -27,6 +27,11 @@ class Birthday(Star):
 
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
+        try:
+            await self.get_birthstudata()
+            logger.info("✅学生数据更新成功！")
+        except Exception as e:
+            logger.error(str(e))
 
     async def get_weekbirthday(self):
         """从API中返回本周生日学生（返回为学生ID）"""
