@@ -64,7 +64,7 @@ class Birthday(Star):
                 data.append({"id": id, "avatar": avatar, "name": name, "birthday": birthday})
                 if avatar:
                     try:
-                        async with session.get(avatar) as response:
+                        async with session.get(f"https:{avatar}") as response:
                             if response.status == 200:
                                 avatar_path = os.path.join(self.path, "avatar", f"{id}.png")
                                 with open(avatar_path, 'wb') as f:
