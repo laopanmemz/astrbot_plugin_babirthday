@@ -12,7 +12,7 @@ from astrbot.api import logger
 from astrbot.api import AstrBotConfig
 from astrbot.core.message.message_event_result import MessageChain
 
-@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件。", "1.1.0")
+@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件。", "1.1.1")
 class Birthday(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -24,9 +24,15 @@ class Birthday(Star):
         self.group_ids = self.config.get("list", [])
         self.execute_time = self.config.get("time", "0:0")
         asyncio.create_task(self.daily_task())
+        asyncio.create_task(self.weekly_task())
 
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
+        try:
+            await self.get_birthstudata()
+            logger.info("✅学生数据更新成功！")
+        except Exception as e:
+            logger.error(str(e))
 
     async def get_weekbirthday(self):
         """从API中返回本周生日学生（返回为学生ID）"""
