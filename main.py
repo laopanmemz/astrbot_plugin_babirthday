@@ -12,7 +12,7 @@ from astrbot.api import logger
 from astrbot.api import AstrBotConfig
 from astrbot.core.message.message_event_result import MessageChain
 
-@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件。", "1.1.1")
+@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件。", "1.1.2")
 class Birthday(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -23,8 +23,8 @@ class Birthday(Star):
         self.isphoto = self.config.get("isphoto", True)
         self.group_ids = self.config.get("list", [])
         self.execute_time = self.config.get("time", "0:0")
-        asyncio.create_task(self.daily_task())
-        asyncio.create_task(self.weekly_task())
+        self.daily = asyncio.create_task(self.daily_task())
+        self.weekly = asyncio.create_task(self.weekly_task())
 
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
@@ -64,7 +64,7 @@ class Birthday(Star):
                 data.append({"id": id, "avatar": avatar, "name": name, "birthday": birthday})
                 if avatar:
                     try:
-                        async with session.get(avatar) as response:
+                        async with session.get(f"https:{avatar}") as response:
                             if response.status == 200:
                                 avatar_path = os.path.join(self.path, "avatar", f"{id}.png")
                                 with open(avatar_path, 'wb') as f:
@@ -255,3 +255,5 @@ class Birthday(Star):
 
     async def terminate(self):
         """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
+        self.daily.cancel()
+        self.weekly.cancel()
