@@ -133,7 +133,7 @@ class Birthday(Star):
             if student.get("birthday") == today_str:
                 id = student.get("id")
                 name = student.get("name")
-                avatar_path = os.path.join(self.path, "avatar" f"{id}.png")
+                avatar_path = os.path.join(self.path, "avatar", f"{id}.png")
                 if self.isphoto and os.path.exists(avatar_path):
                     message_chain = MessageChain().message(f"🎉今天是 {name} 的生日！").file_image(avatar_path)
                 else:
