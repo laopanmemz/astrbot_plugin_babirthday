@@ -232,7 +232,7 @@ class Birthday(Star):
                 status = ""
                 if is_today:
                     status = "（🎉就在今天！）"
-                if is_past:
+                elif is_past:
                     status = "（已过）"
                 else:
                     status = "（未过）"
