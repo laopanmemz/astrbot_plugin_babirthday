@@ -12,7 +12,7 @@ from astrbot.api import logger
 from astrbot.api import AstrBotConfig
 from astrbot.core.message.message_event_result import MessageChain
 
-@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件。", "1.1.2")
+@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件。", "1.1.3")
 class Birthday(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -25,6 +25,7 @@ class Birthday(Star):
         self.execute_time = self.config.get("time", "0:0")
         self.daily = asyncio.create_task(self.daily_task())
         self.weekly = asyncio.create_task(self.weekly_task())
+        self.data_update_lock = asyncio.Lock()
 
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
@@ -44,39 +45,40 @@ class Birthday(Star):
 
     async def get_birthstudata(self):
         """使用返回到的ID，去请求获得学生详细信息，把本周学生的基本信息存在json内，并拉取学生头像"""
-        data = []
-        students_list = await self.get_weekbirthday()
-        if os.path.exists(os.path.join(self.path, "avatar")):
-            shutil.rmtree(os.path.join(self.path, "avatar")) # 这一步先把原来的旧数据清空
-        if not os.path.exists(os.path.join(self.path, "avatar")):
-            os.mkdir(os.path.join(self.path, "avatar")) # 确认删干净后，再重新建立新目录
-        async with aiohttp.ClientSession() as session:
-            for student in students_list:
-                async with session.get(self.api + "/" + str(student), timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                    req = await resp.json()
-                id = req["data"]["id"]
-                name = req["data"]["given_name"]
-                avatar = None
-                for i in req["data"]["skin_list"]:
-                    if i.get("id") == id:
-                        avatar = i.get("avatar")
-                birthday = req["data"]["birthday"]
-                data.append({"id": id, "avatar": avatar, "name": name, "birthday": birthday})
-                if avatar:
-                    try:
-                        async with session.get(f"https:{avatar}") as response:
-                            if response.status == 200:
-                                avatar_path = os.path.join(self.path, "avatar", f"{id}.png")
-                                with open(avatar_path, 'wb') as f:
-                                    f.write(await response.read())
-                            else:
-                                logger.error(f"下载头像失败，状态码: {response.status}, ID: {id}")
-                    except Exception as e:
-                        logger.error(f"下载头像图片时出错: {e}, ID: {id}")
-        with open(os.path.join(self.path, "birthday.json"), "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+        async with self.data_update_lock:
+            data = []
+            students_list = await self.get_weekbirthday()
+            if os.path.exists(os.path.join(self.path, "avatar")):
+                shutil.rmtree(os.path.join(self.path, "avatar")) # 这一步先把原来的旧数据清空
+            if not os.path.exists(os.path.join(self.path, "avatar")):
+                os.mkdir(os.path.join(self.path, "avatar")) # 确认删干净后，再重新建立新目录
+            async with aiohttp.ClientSession() as session:
+                for student in students_list:
+                    async with session.get(self.api + "/" + str(student), timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                        req = await resp.json()
+                    id = req["data"]["id"]
+                    name = req["data"]["given_name"]
+                    avatar = None
+                    for i in req["data"]["skin_list"]:
+                        if i.get("id") == id:
+                            avatar = i.get("avatar")
+                    birthday = req["data"]["birthday"]
+                    data.append({"id": id, "avatar": avatar, "name": name, "birthday": birthday})
+                    if avatar:
+                        try:
+                            async with session.get(f"https:{avatar}") as response:
+                                if response.status == 200:
+                                    avatar_path = os.path.join(self.path, "avatar", f"{id}.png")
+                                    with open(avatar_path, 'wb') as f:
+                                        f.write(await response.read())
+                                else:
+                                    logger.error(f"下载头像失败，状态码: {response.status}, ID: {id}")
+                        except Exception as e:
+                            logger.error(f"下载头像图片时出错: {e}, ID: {id}")
+            with open(os.path.join(self.path, "birthday.json"), "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
 
-        logger.info("已拉取最新数据。")
+            logger.info("已拉取最新数据。")
 
     async def weekly_task(self):
         """使用cron表达式的每周任务"""
@@ -117,6 +119,8 @@ class Birthday(Star):
                 sleep_seconds = (next_run - now).total_seconds()
                 logger.info(f"下次执行每日任务时间: {next_run}，等待 {sleep_seconds} 秒")
                 await asyncio.sleep(sleep_seconds)
+                # 添加5秒延时，确保weekly_task先执行
+                await asyncio.sleep(5)
                 await self.today_birthdays()
                 await asyncio.sleep(60)
             except Exception as e:
@@ -125,8 +129,10 @@ class Birthday(Star):
 
     async def today_birthdays(self): # 发送生日提醒
         """定时发送今日生日提醒"""
-        with open(self.data_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        # 等待任何正在进行的数据更新完成
+        async with self.data_update_lock:
+            with open(self.data_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
         today = datetime.date.today()
         today_str = f"{today.month:02d}-{today.day:02d}"
         for student in data:
@@ -161,8 +167,10 @@ class Birthday(Star):
         """手动拉取学员生日"""
         found = False
         chain = []
-        with open(self.data_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        # 等待任何正在进行的数据更新完成
+        async with self.data_update_lock:
+            with open(self.data_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
         today = datetime.date.today()
         today_str = f"{today.month:02d}-{today.day:02d}"
         for student in data:
@@ -187,8 +195,10 @@ class Birthday(Star):
     @filter.command("ba本周生日")
     async def week_birthdays(self, event: AstrMessageEvent):
         """输出本周剩余天数的学生生日"""
-        with open(self.data_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        # 等待任何正在进行的数据更新完成
+        async with self.data_update_lock:
+            with open(self.data_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
         # 获取当前日期
         today = datetime.date.today()
         # 计算本周一的日期
