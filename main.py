@@ -12,7 +12,7 @@ from astrbot.api import logger
 from astrbot.api import AstrBotConfig
 from astrbot.core.message.message_event_result import MessageChain
 
-@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件。", "1.1.3")
+@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件。", "1.2.1")
 class Birthday(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -30,7 +30,8 @@ class Birthday(Star):
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
         try:
-            await self.get_birthstudata()
+	    if not os.path.exists(self.data_path):
+                asyncio.create_task(self.get_birthstudata())
             logger.info("✅学生数据更新成功！")
         except Exception as e:
             logger.error(str(e))
@@ -78,7 +79,7 @@ class Birthday(Star):
             with open(os.path.join(self.path, "birthday.json"), "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
 
-            logger.info("已拉取最新数据。")
+            logger.info("✅学生数据更新成功！")
 
     async def weekly_task(self):
         """使用cron表达式的每周任务"""
@@ -94,7 +95,7 @@ class Birthday(Star):
                 await asyncio.sleep(sleep_seconds)
 
                 # 执行数据拉取
-                await self.get_birthstudata()
+                asyncio.create_task(self.get_birthstudata())
                 logger.info("每周数据拉取完成")
 
                 # 等待一小段时间避免重复执行
@@ -157,7 +158,7 @@ class Birthday(Star):
     async def update_students_command(self, event: AstrMessageEvent):
         """手动对学生数据进行更新"""
         try:
-            await self.get_birthstudata()
+            asyncio.create_task(self.get_birthstudata())
             yield event.plain_result("✅学生数据更新成功！")
         except Exception as e:
             yield event.plain_result(str(e))

@@ -10,7 +10,7 @@
 
 如果载入插件时提示例如 `No module named 'zipfile'` ，可能是依赖未安装
 
-此时需要进入AstrBot Web控制台——右上角 `安装 Pip 库` ，并填入安装 `croniter` 、 `aiohttp` 、 `asyncio` 库。
+此时需要进入AstrBot Web控制台——右上角 `安装 Pip 库` ，并依次安装 `croniter` 、 `aiohttp` 、 `asyncio` 库。
 
 ### 使用方法
 
@@ -30,14 +30,16 @@
 
   1. 开启提醒群 [列表]
 
-     填写需要提醒的群聊唯一标识符sid。不是群号，不要填写 " `1919810114` " 之类的纯群号，唯一标识符可以向群聊发送 `/sid` 以获取，发送后，您可能会收到如下内容：
+     填写需要提醒的群聊唯一标识符UMO。不是群号，不要填写 " `1919810114` " 之类的纯群号，唯一标识符可以向群聊发送 `/sid` 以获取，发送后，您可能会收到如下内容：
 
      ```text
-     SID: aiocqhttp:GroupMessage:1919810114 此 ID 可用于设置会话白名单。
-     /wl <SID> 添加白名单, /dwl <SID> 删除白名单。
-     
-     UID: 1145141919 此 ID 可用于设置管理员。
-     /op <UID> 授权管理员, /deop <UID> 取消管理员。
+     UMO: 「aiocqhttp:GroupMessage:1919810114」 此值可用于设置白名单。
+     UID: 「1145141919」 此值可用于设置管理员。
+     消息会话来源信息:
+       机器人 ID: 「aiocqhttp」
+       消息类型: 「GroupMessage」
+       会话 ID: 「1919810114」
+     消息来源可用于配置机器人的配置文件路由。
      ```
 
      其中的 `aiocqhttp:GroupMessage:1919810114` 即为唯一标识符，填入配置列表即可。
@@ -47,13 +49,15 @@
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;如果开启了会话隔离(unique_session)，您的唯一标识符SID可能会有所不同，向群聊发送 `/sid` 后，您可能会收到如下内容：
 <pre><blockcode>
-SID: aiocqhttp:GroupMessage:7210721072_1919810114 此 ID 可用于设置会话白名单。
-/wl <SID> 添加白名单, /dwl <SID> 删除白名单。
+UMO: 「aiocqhttp:GroupMessage:7210721072_1919810114」 此值可用于设置白名单。
+UID: 「7210721072」 此值可用于设置管理员。
+消息会话来源信息:
+  机器人 ID: 「aiocqhttp」
+  消息类型: 「GroupMessage」
+  会话 ID: 「7210721072_1919810114」
+消息来源可用于配置机器人的配置文件路由。
 
-UID: 7210721072 此 ID 可用于设置管理员。
-/op <UID> 授权管理员, /deop <UID> 取消管理员。
-
-当前处于独立会话模式, 此群 ID: 1919810114, 也可将此 ID 加入白名单来放行整个群聊。
+当前处于独立会话模式, 此群 ID: 「1919810114」, 也可将此 ID 加入白名单来放行整个群聊。
 </blockcode></pre>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;此时，您需要将 `GroupMessage:` 后面的那一长串内容（也就是7210721072_1919810114这段，不同消息平台格式可能不同，例如WechatPadPro端可能会是1919810114@chatroom#wxid_0d000721homo14）一起删除掉
 
