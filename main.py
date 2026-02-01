@@ -5,20 +5,18 @@ import datetime
 import shutil
 import aiohttp
 import croniter
-import re
 import astrbot.api.message_components as Comp
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 from astrbot.api import AstrBotConfig
 from astrbot.core.message.message_event_result import MessageChain
-from bs4 import BeautifulSoup
 
-@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件。", "1.2.0")
+@register("astrbot_plugin_babirthday", "laopanmemz", "一个Blue Archive学员生日提醒的插件。", "1.1.3")
 class Birthday(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
-        self.url = "https://www.gamekee.com/ba/170623.html"
+        self.api = "https://api.kivo.wiki/api/v1/data/students"
         self.config = config
         self.path = os.path.join("data", "plugins", "astrbot_plugin_babirthday")
         self.data_path = os.path.join(self.path, "birthday.json")
@@ -26,119 +24,83 @@ class Birthday(Star):
         self.group_ids = self.config.get("list", [])
         self.execute_time = self.config.get("time", "0:0")
         self.daily = asyncio.create_task(self.daily_task())
-        self.month = asyncio.create_task(self.month_task())
+        self.weekly = asyncio.create_task(self.weekly_task())
         self.data_update_lock = asyncio.Lock()
 
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
         try:
-            if not os.path.exists(self.data_path):
-                asyncio.create_task(self.get_birthstudata())
+            await self.get_birthstudata()
+            logger.info("✅学生数据更新成功！")
         except Exception as e:
             logger.error(str(e))
+
+    async def get_weekbirthday(self):
+        """从API中返回本周生日学生（返回为学生ID）"""
+        async with aiohttp.ClientSession() as session:
+            async with session.get(self.api + "/birthday/week", timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                weekbirthday = await resp.json()
+        students = weekbirthday["data"]["students"]
+        return students
 
     async def get_birthstudata(self):
         """使用返回到的ID，去请求获得学生详细信息，把本周学生的基本信息存在json内，并拉取学生头像"""
         async with self.data_update_lock:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self.url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                    html_content = await resp.text()
-
             data = []
-            soup = BeautifulSoup(html_content, 'html.parser')
-
-            # 查找所有具有 data-sort-default 属性的 <tr> 行
-            rows = soup.select('tr[data-sort-default]')
-
+            students_list = await self.get_weekbirthday()
             if os.path.exists(os.path.join(self.path, "avatar")):
                 shutil.rmtree(os.path.join(self.path, "avatar")) # 这一步先把原来的旧数据清空
-
             if not os.path.exists(os.path.join(self.path, "avatar")):
                 os.mkdir(os.path.join(self.path, "avatar")) # 确认删干净后，再重新建立新目录
-
-                # 遍历每一行
-                for row in rows:
-                    # 在当前行中查找：第2个 <td> -> <p> -> 第2个 <span>
-                    target_span = row.select_one('td:nth-of-type(2) > p > span:nth-of-type(2)')
-
-                    # 如果 data-sort-default 的值为 0，则跳过（此为表头行）
-                    sort_value = row.get('data-sort-default')
-
-                    if sort_value == "0":
-                        continue
-                    if target_span is None:
-                        continue
-
-                    name = target_span.text.strip()
-                    name = re.sub(r'\r\n.*', '', name)
-
-                    avatar_element = row.select_one('td:nth-of-type(1) > p > div > img')
-                    birthday_element = row.select_one('td:nth-of-type(3) > p > span:nth-of-type(2)')
-
-                    if not avatar_element or not birthday_element:
-                        continue
-
-                    birthday_raw = birthday_element.text.replace("月", "-").replace("日", "")
-                    if birthday_raw == "/" or birthday_raw == "":
-                        continue
-                    birthday = "-".join([f"{int(x):02d}" for x in birthday_raw.split("-")])
-                    avatar_url = avatar_element.get('src')
-                    if not avatar_url:
-                        continue
-
-                    # 添加学生数据
-                    data.append({
-                        "id": sort_value,
-                        "name": name,
-                        "avatar": avatar_url,
-                        "birthday": birthday
-                    })
-
-                    # 下载头像
-                    if avatar_url:
+            async with aiohttp.ClientSession() as session:
+                for student in students_list:
+                    async with session.get(self.api + "/" + str(student), timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                        req = await resp.json()
+                    id = req["data"]["id"]
+                    name = req["data"]["given_name"]
+                    avatar = None
+                    for i in req["data"]["skin_list"]:
+                        if i.get("id") == id:
+                            avatar = i.get("avatar")
+                    birthday = req["data"]["birthday"]
+                    data.append({"id": id, "avatar": avatar, "name": name, "birthday": birthday})
+                    if avatar:
                         try:
-                            # 确保URL格式正确
-                            if avatar_url.startswith('//'):
-                                avatar_url = 'https:' + avatar_url
-                            logger.info("开始下载头像数据。")
-                            async with aiohttp.ClientSession() as session:
-                                async with session.get(avatar_url) as response:
-                                    if response.status == 200:
-                                        avatar_path = os.path.join(self.path, "avatar", f"{sort_value}.png")
-                                        with open(avatar_path, 'wb') as f:
-                                            f.write(await response.read())
-                                    else:
-                                        logger.error(f"下载头像失败，状态码: {response.status}, ID: {sort_value}")
+                            async with session.get(f"https:{avatar}") as response:
+                                if response.status == 200:
+                                    avatar_path = os.path.join(self.path, "avatar", f"{id}.png")
+                                    with open(avatar_path, 'wb') as f:
+                                        f.write(await response.read())
+                                else:
+                                    logger.error(f"下载头像失败，状态码: {response.status}, ID: {id}")
                         except Exception as e:
-                            logger.error(f"下载头像图片时出错: {e}, ID: {sort_value}")
+                            logger.error(f"下载头像图片时出错: {e}, ID: {id}")
+            with open(os.path.join(self.path, "birthday.json"), "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
 
-                # 保存数据到文件
-                with open(os.path.join(self.path, "birthday.json"), "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=4)
+            logger.info("已拉取最新数据。")
 
-                logger.info("✅学生数据更新成功！")
-
-    async def month_task(self):
-        """使用cron表达式的每月任务"""
-        # cron表达式: "0 30 23 L * ?" 表示每月最后一天的23:30执行
-        cron = croniter.croniter("0 30 23 L * ?", datetime.datetime.now())
+    async def weekly_task(self):
+        """使用cron表达式的每周任务"""
+        # cron表达式: "0 0 * * 1" 表示每周一0点执行
+        cron = croniter.croniter("0 0 * * 1", datetime.datetime.now())
         while True:
             try:
                 # 获取下一次执行时间
                 next_run = cron.get_next(datetime.datetime)
                 now = datetime.datetime.now()
                 sleep_seconds = (next_run - now).total_seconds()
-                logger.info(f"下次执行每月任务时间: {next_run}，等待 {sleep_seconds} 秒")
+                logger.info(f"下次执行每周任务时间: {next_run}，等待 {sleep_seconds} 秒")
                 await asyncio.sleep(sleep_seconds)
 
                 # 执行数据拉取
-                asyncio.create_task(self.get_birthstudata())
-                logger.info("每月数据拉取完成")
+                await self.get_birthstudata()
+                logger.info("每周数据拉取完成")
 
                 # 等待一小段时间避免重复执行
                 await asyncio.sleep(60)
             except Exception as e:
-                logger.error(f"每月定时任务执行失败: {e}")
+                logger.error(f"每周定时任务执行失败: {e}")
                 await asyncio.sleep(300)
 
     async def daily_task(self):
@@ -195,7 +157,7 @@ class Birthday(Star):
     async def update_students_command(self, event: AstrMessageEvent):
         """手动对学生数据进行更新"""
         try:
-            asyncio.create_task(self.get_birthstudata())
+            await self.get_birthstudata()
             yield event.plain_result("✅学生数据更新成功！")
         except Exception as e:
             yield event.plain_result(str(e))
@@ -277,6 +239,7 @@ class Birthday(Star):
 
             # 按日期顺序显示学生信息
             for date_str, student, is_past, is_today in ordered_results:
+                status = ""
                 if is_today:
                     status = "（🎉就在今天！）"
                 elif is_past:
@@ -303,4 +266,4 @@ class Birthday(Star):
     async def terminate(self):
         """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
         self.daily.cancel()
-        self.month.cancel()
+        self.weekly.cancel()
