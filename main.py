@@ -30,7 +30,7 @@ class Birthday(Star):
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
         try:
-	    if not os.path.exists(self.data_path):
+            if not os.path.exists(self.data_path):
                 asyncio.create_task(self.get_birthstudata())
             logger.info("✅学生数据更新成功！")
         except Exception as e:
