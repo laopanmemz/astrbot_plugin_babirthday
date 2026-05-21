@@ -8,9 +8,9 @@
 
 在AstrBot插件市场安装插件后，通常情况下，AstrBot大概会自动解决依赖问题（罢
 
-如果载入插件时提示例如 `No module named 'zipfile'` ，可能是依赖未安装
+如果载入插件时提示例如 `No module named 'xxxxxx'` ，可能是依赖未安装
 
-此时需要进入AstrBot Web控制台——右上角 `安装 Pip 库` ，并依次安装 `croniter` 、 `aiohttp` 、 `asyncio` 库。
+此时需要进入AstrBot Web控制台——右上角 `安装 Pip 库` ，将上述报错样式中英文单引号内的内容xxxxxx复制填写进去安装即可（xxxxxx为你实际报错内容中英文单引号里的提示库名）。
 
 ### 使用方法
 
