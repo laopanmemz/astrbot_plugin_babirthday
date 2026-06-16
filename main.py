@@ -12,12 +12,15 @@ from astrbot.api import logger
 from astrbot.api import AstrBotConfig
 from astrbot.core.message.message_event_result import MessageChain
 
+# 手动构建不包含消息隔离特征的unified_msg_origin（umo）获取方法
+def get_original_umo(event: AstrMessageEvent) -> str:
+    return f"{event.get_platform_name()}:{event.message_obj.type.value}:{event.message_obj.session_id}"
 
 @register(
     "astrbot_plugin_babirthday",
     "laopanmemz",
     "一个Blue Archive学员生日提醒的插件。",
-    "1.2.2",
+    "1.2.3",
 )
 class Birthday(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -367,6 +370,46 @@ class Birthday(Star):
         yield event.chain_result(chain)
         event.stop_event()
         return
+
+    @filter.command("订阅ba生日")
+    async def add_sub(self, event: AstrMessageEvent):
+        """订阅ba生日信息推送"""
+        umo = get_original_umo(event)
+        
+        # 获取当前订阅列表
+        sub_list = self.config.get("list", [])
+        
+        # 检查是否已订阅
+        if umo in sub_list:
+            yield event.plain_result("您已订阅过推送了。")
+            return
+        
+        # 添加到订阅列表
+        sub_list.append(umo)
+        self.config["list"] = sub_list
+        self.config.save_config()
+        
+        yield event.plain_result("✅ 成功订阅推送")
+
+    @filter.command("退订ba生日", alias={"tdba生日"})
+    async def remove_sub(self, event: AstrMessageEvent):
+        """取消订阅ba生日信息推送"""
+        umo = get_original_umo(event)
+        
+        # 获取当前订阅列表
+        sub_list = self.config.get("list", [])
+        
+        # 检查是否已订阅
+        if umo not in sub_list:
+            yield event.plain_result("您还没有订阅过推送。")
+            return
+        
+        # 从订阅列表中移除
+        sub_list.remove(umo)
+        self.config["list"] = sub_list
+        self.config.save_config()
+        
+        yield event.plain_result("已取消订阅推送。")
 
     async def terminate(self):
         """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
